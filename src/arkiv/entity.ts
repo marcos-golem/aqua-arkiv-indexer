@@ -20,21 +20,25 @@ export const CONTENT_TYPE = 'application/json';
  * | maker           | string | `a.maker`                         | identity component; `QueryApi.strategiesByMaker` -> `eq('maker', m)` |
  * | app             | string | `a.app`                           | identity component; the same maker can ship to two different apps    |
  * | strategyHash    | string | `a.strategyHash`                  | identity component; a maker+app can carry several strategy hashes    |
- * | token           | string | one row PER entry of `a.tokens`   | `QueryApi.strategiesByPair` -> `and(eq('token',A), eq('token',B))`   |
+ * | token_&lt;addr&gt;    | string | `'1'`, one key PER entry of `a.tokens` | `QueryApi.strategiesByPair` -> `eq(tokenKey(A), '1')`      |
  * | underfunded     | string | `'true' \| 'false'`               | `QueryApi.underfundedMakers` -> `eq('underfunded', 'true')`          |
  * | firstAttestedAt | number | first successful `attestedAt`     | NOT recomputed on refresh — see writer.ts's read-merge-write step    |
  *
  * Two design notes worth keeping visible:
  *
- * 1. `token` is deliberately written as a REPEATED attribute key (one row per token in the
- *    strategy) rather than a single joined string, because Arkiv's attribute model is a flat
- *    multiset of key/value rows per entity — there is no array-valued attribute. Repeating the
- *    key is the only way this model can express "this entity's token set contains X", and an AND
- *    of two `eq('token', ...)` predicates is how the read side expresses containment of a pair.
- *    This assumes the query engine matches an AND of same-key predicates existentially across
- *    separate rows, which we could not verify against a live Braga instance in this pass (no
- *    credentials) — the query module should confirm it against the real network before relying
- *    on it in production.
+ * 1. Token-set membership is encoded as ONE ATTRIBUTE KEY PER TOKEN (`token_<addr>` = `'1'`),
+ *    not as a repeated `token` key and not as a joined string. Arkiv's attribute model is a flat
+ *    set of key/value rows per entity with no array-valued attribute, and — verified live on
+ *    Braga, 25 Jul 2026 — **the network rejects a duplicated key outright**:
+ *
+ *      failed to validate storage transaction: create[0] string annotation key token is duplicated
+ *
+ *    So the repeated-key encoding this file previously used could never have been written at all.
+ *    Folding the token into the key sidesteps that, and makes "contains X" a plain single-key
+ *    `eq`. The same probe confirmed `and(eq(token_A,'1'), eq(token_B,'1'))` matches an entity
+ *    carrying both and returns nothing when either is absent, so pair containment is expressible
+ *    server-side too. Keys must match Arkiv's identifier grammar (`^[\p{L}_][\p{L}\p{N}_]*$`) —
+ *    `token_0xabc…` satisfies it; a `token:0xabc…` separator does NOT and is rejected.
  * 2. `underfunded` is a string, not a number. The SDK's numeric-attribute encoder special-cases
  *    the literal value `0` (see `opsToTxData` in `@arkiv-network/sdk`, which encodes numeric `0`
  *    as an empty byte string rather than the number zero) — an unnecessary footgun for a plain
@@ -50,10 +54,26 @@ export const ATTR = {
   maker: 'maker',
   app: 'app',
   strategyHash: 'strategyHash',
-  token: 'token',
   underfunded: 'underfunded',
   firstAttestedAt: 'firstAttestedAt',
 } as const;
+
+/** Prefix of the per-token membership keys. Never used as a bare key — see {@link tokenKey}. */
+export const TOKEN_KEY_PREFIX = 'token_';
+
+/** The value every `token_<addr>` key carries. Presence is the signal; the value is a constant. */
+export const TOKEN_PRESENT = '1';
+
+/**
+ * The attribute key encoding "this strategy's token set contains `token`".
+ *
+ * Lowercased because the rest of the pipeline works in lowercase hex (see the README's note on
+ * confining the 1inch SDK's `Address` wrappers to src/ingest) and an attribute key is matched
+ * byte-for-byte — a mixed-case key would simply never be found by a lowercase query.
+ */
+export function tokenKey(token: string): string {
+  return `${TOKEN_KEY_PREFIX}${token.toLowerCase()}`;
+}
 
 /** The attributes that jointly identify one logical attestation record (see module doc). */
 export function identityAttributes(a: StrategyAttestation): EntityAttribute[] {
@@ -73,7 +93,7 @@ export function identityAttributes(a: StrategyAttestation): EntityAttribute[] {
 export function deriveAttributes(a: StrategyAttestation, firstAttestedAt: number): EntityAttribute[] {
   return [
     ...identityAttributes(a),
-    ...a.tokens.map((token): EntityAttribute => ({ key: ATTR.token, value: token })),
+    ...a.tokens.map((token): EntityAttribute => ({ key: tokenKey(token), value: TOKEN_PRESENT })),
     { key: ATTR.underfunded, value: a.underfunded ? 'true' : 'false' },
     { key: ATTR.firstAttestedAt, value: Math.trunc(firstAttestedAt) },
   ];

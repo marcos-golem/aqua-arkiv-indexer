@@ -120,10 +120,9 @@ describe('strategiesByPair', () => {
     const { client } = createFakeQueryClient([makeEntity(attestation)]);
     const api = createQueryApi(FAKE_ARKIV_CONFIG, { client });
 
-    // This is exactly the case the client-side containment fallback exists for: a server-side
-    // AND of two `eq('token', ...)` predicates would need to match across two of the THREE
-    // separate `token` rows this entity carries; the client-side `.tokens.includes()` check
-    // handles it unambiguously regardless of that server semantics question.
+    // A pair query must not require the strategy to be exactly that pair. The server leg narrows
+    // to entities carrying `token_<A>`; the client-side `.tokens.includes()` check confirms the
+    // second leg against the payload, so a three-token strategy still matches any pair it holds.
     const result = await api.strategiesByPair(TOKEN_A, TOKEN_D);
     expect(result).toHaveLength(1);
     expect(result[0]?.tokens).toEqual([TOKEN_A, TOKEN_C, TOKEN_D]);

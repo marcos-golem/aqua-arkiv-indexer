@@ -13,6 +13,9 @@ import {
   deriveAttributes,
   encodeAttestationPayload,
   identityAttributes,
+  TOKEN_KEY_PREFIX,
+  TOKEN_PRESENT,
+  tokenKey,
 } from '../src/arkiv/entity.js';
 import type {
   ArkivEntityClient,
@@ -153,8 +156,18 @@ describe('entity payload and annotation shape', () => {
     expect(attrs).toContainEqual({ key: ATTR.maker, value: MAKER });
     expect(attrs).toContainEqual({ key: ATTR.app, value: APP });
     expect(attrs).toContainEqual({ key: ATTR.strategyHash, value: a.strategyHash });
-    // strategiesByPair() needs a `token` row per token — repeated key, not a joined string.
-    expect(attrs.filter((x) => x.key === ATTR.token).map((x) => x.value)).toEqual([TOKEN_A, TOKEN_B]);
+    // strategiesByPair() needs one membership key PER token. It must be `token_<addr>` and not a
+    // repeated bare `token` key: Braga rejects a duplicated annotation key outright ("string
+    // annotation key token is duplicated"), so the repeated form is unwritable, not merely
+    // unqueryable. Asserting the exact key shape here is what keeps that regression from
+    // reappearing in a suite that otherwise never touches the network.
+    expect(attrs.filter((x) => x.key.startsWith(TOKEN_KEY_PREFIX))).toEqual([
+      { key: tokenKey(TOKEN_A), value: TOKEN_PRESENT },
+      { key: tokenKey(TOKEN_B), value: TOKEN_PRESENT },
+    ]);
+    // No key may repeat, for any key — the network validates this across the whole attribute set.
+    const keys = attrs.map((x) => x.key);
+    expect(new Set(keys).size).toBe(keys.length);
     // underfundedMakers() needs a plain eq('underfunded', 'true'|'false') — string, not number.
     expect(attrs).toContainEqual({ key: ATTR.underfunded, value: 'false' });
     expect(typeof attrs.find((x) => x.key === ATTR.underfunded)?.value).toBe('string');

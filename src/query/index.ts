@@ -16,7 +16,7 @@
  * place that resolves config from the environment, via src/config.ts's `loadArkivReadConfig()`.
  */
 
-import { ATTR, decodeAttestationPayload } from '../arkiv/entity.js';
+import { ATTR, decodeAttestationPayload, TOKEN_PRESENT, tokenKey } from '../arkiv/entity.js';
 import type { Addr, QueryApi, StrategyAttestation } from '../types.js';
 import type { ArkivQueryClient, ArkivReadConfig, RawEntity } from './client.js';
 import { createRealArkivQueryClient } from './client.js';
@@ -65,32 +65,20 @@ export function createQueryApi(config: ArkivReadConfig, deps: QueryApiDeps = {})
   ): Promise<readonly StrategyAttestation[]> {
     const [t0, t1] = normalizePair(tokenA, tokenB);
 
-    // Query on ONE leg server-side, then verify the other leg client-side against the decoded
-    // payload's `tokens` array — rather than sending `and(eq('token', t0), eq('token', t1))` and
-    // trusting the server to match it existentially across the two separate `token` attribute
-    // rows a multi-token strategy's entity carries.
+    // Query one leg server-side, then verify the other client-side against the decoded payload's
+    // `tokens` array.
     //
-    // Why not trust the server-side AND: entity.ts's ATTR doc comment flags that exact semantics
-    // as unverified against a live Braga instance (no credentials were available when the write
-    // side was built). Reading the query engine's source (node_modules/@arkiv-network/sdk/src/
-    // query/engine.ts) shows predicates compile to a flat boolean expression string (`token =
-    // "A" && token = "B"`) evaluated over an entity's whole attribute set — which reads like it
-    // *should* match existentially across rows — but "reads like it should" is not the same as
-    // "verified live", and the failure mode if it's wrong is the worst kind: a pair query would
-    // silently return `[]`, indistinguishable from "no strategies on this pair" rather than an
-    // error. Filtering client-side is correct regardless of which way that assumption resolves,
-    // and it also handles the case a same-key AND could never handle cleanly anyway: a
-    // three-token strategy still contains any two-token pair.
+    // Since token membership is one attribute key per token (`token_<addr>`, see entity.ts), the
+    // server COULD answer both legs: `and(eq(tokenKey(t0),'1'), eq(tokenKey(t1),'1'))` was
+    // verified live on Braga (25 Jul 2026) to match an entity carrying both keys and return
+    // nothing when either is absent. That is a strictly narrower fetch, and worth doing if the
+    // over-fetch ever matters.
     //
-    // The tradeoff: one extra round trip's worth of over-fetching (every strategy containing t0,
-    // not just those containing both) versus a query that might be silently wrong. For a
-    // discovery/solvency read path — not a hot in-block path — that's the right side to err on.
-    //
-    // Once someone verifies the AND-across-same-key semantics on a live Braga instance, swapping
-    // to the pure server-side filter is a one-line change: replace the `findByAttribute` call
-    // below with a client method built on `and(eq(ATTR.token, t0), eq(ATTR.token, t1))` (see
-    // src/arkiv/client.ts's `findByAttributes` for the exact pattern) and drop the `.filter(...)`.
-    const candidates = decodeAll(await client.findByAttribute(ATTR.token, t0));
+    // It isn't done here because it would widen `ArkivQueryClient` — deliberately one method,
+    // "every entity carrying this one attribute" (see client.ts) — to earn one saved round trip
+    // on a discovery/solvency read path that is not hot. The client-side leg is correct either
+    // way and costs one `Array.includes` per candidate.
+    const candidates = decodeAll(await client.findByAttribute(tokenKey(t0), TOKEN_PRESENT));
     if (t0 === t1) return candidates;
     return candidates.filter((a) => a.tokens.includes(t1));
   }
