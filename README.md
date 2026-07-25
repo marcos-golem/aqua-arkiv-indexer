@@ -90,10 +90,10 @@ serve with correct content types, a malformed address gets a `400`, and path tra
   `createPublicClient`.
 - Arkiv entity keys are **assigned by the chain**, not chosen — logical identity is enforced by
   query-before-write.
-- Arkiv attributes are a flat multiset with no array values, so token-set membership is a
-  **repeated** `token` key. Whether the query engine ANDs two same-key predicates existentially is
-  **unverified** — `src/query` therefore filters one leg server-side and confirms the second
-  client-side, so it is correct either way.
+- Arkiv attributes are a flat set with no array values, so token-set membership is **one key per
+  token** (`token_<addr>` = `'1'`). An earlier draft used a *repeated* `token` key; Braga rejects
+  that outright (`string annotation key token is duplicated`), so it could never have been
+  written — see the live findings below.
 - viem's `getLogs` has no raw `topics` parameter; `events:` compiles to the same nested-OR topic0
   filter (confirmed on the wire), and `multicall` requires a `chain` on the client.
 
@@ -108,10 +108,35 @@ serve with correct content types, a malformed address gets a `400`, and path tra
   Note an anvil fork cannot stand in: it only serves logs from its own post-fork blocks, and
   querying below the fork point gets proxied upstream and rejected as an archive request. The fork
   proves the pipeline on strategies it created itself, which is not the same claim.
-- **The live Arkiv (Braga) write path.** Those tests exist and are gated behind `RUN_LIVE=1`; they
-  skip cleanly and were **not run**, because there are no credentials in this environment. So
-  heartbeat expiry behaviour is verified by unit test against a stubbed client, not against Braga.
 - Whether anyone has already built an Aqua indexer, e.g. in the $100k bounty submissions.
+
+**Verified against live Braga with a funded key (25 Jul 2026)** — this section previously listed
+the write path as unverified:
+
+- `RUN_LIVE=1 pnpm test` passes **82/82**. The round-trip writes a 10s-expiry attestation, reads it
+  back, stops refreshing, and confirms the record is gone — so heartbeat expiry is now demonstrated
+  on the network, not only against a stubbed client.
+- **Braga rejects duplicated annotation keys.** The first live run failed with `failed to validate
+  storage transaction: create[0] string annotation key token is duplicated`. The repeated-`token`
+  encoding was therefore *unwritable*, not merely un-queryable — a defect no offline test could
+  catch, because the in-memory fake accepts repeated keys. Token membership is now `token_<addr>`.
+- Annotation keys must match Arkiv's identifier grammar (`^[\p{L}_][\p{L}\p{N}_]*$`). `token_0xabc…`
+  is accepted; a `token:0xabc…` separator is rejected as an invalid identifier.
+- `and(eq(token_A,'1'), eq(token_B,'1'))` matches an entity carrying both keys and returns nothing
+  when either is absent — so pair containment *is* expressible server-side. `src/query` still
+  confirms the second leg client-side (see the comment there for why).
+- **Full pipeline, fork → Braga → read API.** `pnpm lifecycle --underfund` then `pnpm index` against
+  the fork attested one live strategy to Braga (queryable in 42ms / 111ms across two runs), and
+  `pnpm demo` served it back on `/api/underfunded`, `/api/maker`, and the pair query, with
+  `coverageRatio 0.0000` and `underfunded: true`. Re-running the indexer in a fresh process updated
+  the *same* entity key, which exercises the query-before-write identity across restarts.
+
+**Known gap found during that run:** `AquaIngestor.watch()` yields only when an Aqua event lands
+(`if (batch.length > 0)`), and solvency is recomputed only from those batches. A maker's wallet
+draining emits an ERC-20 `Transfer`, not an Aqua event — so a strategy that becomes underfunded
+between Aqua events keeps being heartbeated with a stale `underfunded: false`. That is exactly the
+silent-illiquidity case this PoC exists to detect, so the tail needs a periodic solvency sweep
+independent of the event stream.
 
 ## Setup
 
