@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Aqua Indexer — read-only demo</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header>
+    <h1>Aqua strategy indexer</h1>
+    <p class="lede">
+      Read-only view over Arkiv attestations for 1inch Aqua strategy state. This is a minimal
+      demo, not a consumer frontend — it exists to show the data is queryable.
+    </p>
+  </header>
+
+  <main>
+    <section aria-labelledby="pair-heading">
+      <h2 id="pair-heading">Look up strategies by token pair</h2>
+      <form id="pair-form">
+        <div class="field">
+          <label for="pair-token-a">Token A address</label>
+          <input id="pair-token-a" name="tokenA" type="text" placeholder="0x…" required
+                 pattern="^0x[0-9a-fA-F]{40}$" autocomplete="off" spellcheck="false" />
+        </div>
+        <div class="field">
+          <label for="pair-token-b">Token B address</label>
+          <input id="pair-token-b" name="tokenB" type="text" placeholder="0x…" required
+                 pattern="^0x[0-9a-fA-F]{40}$" autocomplete="off" spellcheck="false" />
+        </div>
+        <button type="submit">Look up</button>
+      </form>
+      <div id="pair-result" class="result" aria-live="polite"></div>
+    </section>
+
+    <section aria-labelledby="maker-heading">
+      <h2 id="maker-heading">Look up a maker</h2>
+      <form id="maker-form">
+        <div class="field">
+          <label for="maker-address">Maker address</label>
+          <input id="maker-address" name="maker" type="text" placeholder="0x…" required
+                 pattern="^0x[0-9a-fA-F]{40}$" autocomplete="off" spellcheck="false" />
+        </div>
+        <button type="submit">Look up</button>
+      </form>
+      <div id="maker-result" class="result" aria-live="polite"></div>
+    </section>
+
+    <section aria-labelledby="underfunded-heading">
+      <h2 id="underfunded-heading">Underfunded makers</h2>
+      <p class="section-note">
+        Strategies whose maker's wallet balance currently falls short of their total committed
+        amount for at least one token, across every app they've shipped to.
+      </p>
+      <button id="underfunded-refresh" type="button">Refresh</button>
+      <div id="underfunded-result" class="result" aria-live="polite"></div>
+    </section>
+  </main>
+
+  <footer>
+    <p>
+      An attestation that doesn't show up here means <strong>nobody is currently vouching</strong>
+      for that strategy — its heartbeat stopped refreshing, or it never existed. It does not mean
+      the strategy closed, and it is not an error.
+    </p>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>
