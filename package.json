@@ -1,0 +1,30 @@
+{
+  "name": "aqua-indexer-poc",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Read layer over 1inch Aqua strategy state, backed by Arkiv",
+  "license": "MIT",
+  "repository": "github:marcos-golem/aqua-arkiv-indexer",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "index": "tsx src/main.ts",
+    "replay": "tsx scripts/replay-diff.ts",
+    "lifecycle": "tsx scripts/anvil-lifecycle.ts",
+    "demo": "tsx src/query/serve.ts"
+  },
+  "dependencies": {
+    "@1inch/aqua-sdk": "^0.2.0",
+    "@arkiv-network/sdk": "^0.7.0",
+    "dotenv": "^17.4.2",
+    "viem": "^2.55.8"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "tsx": "^4.23.1",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}
